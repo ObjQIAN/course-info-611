@@ -47,17 +47,17 @@ function initMap() {
 async function downloadDemographicData() {
   const dmgResp = await fetch('../data/phl_blockgroup_dmg.csv');
   const dmgText = await dmgResp.text();
-  const dmg = csv.parse(dmgText, {
+  const dmgRows = csv.parse(dmgText, {
     columns: false, // Don't generate object literals -- just use arrays
     from_line: 2, // Skip the first line (the header)
   });
 
-  const dmgByGeoid = dmg.reduce((acc, record) => {
-    const [state, county, tract, bg] = record.slice(record.length - 4);
+  const dmgByGeoid = {};
+  for (const row of dmgRows) {
+    const [state, county, tract, bg] = row.slice(row.length - 4);
     const geoid = `${state}${county}${tract}${bg}`;
-    acc[geoid] = record.slice(0, record.length - 4);
-    return acc;
-  }, {});
+    dmgByGeoid[geoid] = row.slice(0, row.length - 4);
+  }
 
   return dmgByGeoid;
 }
@@ -100,15 +100,15 @@ const RACE_LABELS = [
  *                  compared value.
  */
 function maximal(arr, fn) {
-  return arr.reduce((maxInfo, item, index) => {
+  let maxInfo = null;
+  for (const [index, item] of arr.entries()) {
     const value = fn ? fn(item) : item;
 
     if (maxInfo === null || value > maxInfo.value) {
-      return { value, item, index };
+      maxInfo = { value, item, index };
     }
-
-    return maxInfo;
-  }, null);
+  }
+  return maxInfo;
 }
 
 /**
@@ -124,12 +124,12 @@ function getGeoID(feature) {
 /**
  * Calculate demographic summary information for a given blockgroup record.
  *
- * @param {Array} dmgRecord An array of demographic information, as loaded
- *                          from a CSV
+ * @param {Array} dmgRow An array of demographic information, as loaded
+ *                       from a CSV
  * @return {object} An object with demographic summary information
  */
-function getDemographicSummary(dmgRecord) {
-  const [totalPop, , ...racePops] = dmgRecord.map((x) => 1 * x);
+function getDemographicSummary(dmgRow) {
+  const [totalPop, , ...racePops] = dmgRow.map((x) => 1 * x);
 
   if (totalPop <= 2) {
     return null;
@@ -189,13 +189,26 @@ function initDataLayer(geoData, dmgData) {
 
   dataLayer.bindTooltip((l) => {
     const geoid = getGeoID(l.feature);
-    const record = dmgData[geoid];
-    const summary = getDemographicSummary(record);
+    const row = dmgData[geoid];
+    const summary = getDemographicSummary(row);
 
     return summary === null ? 'No statistics<br>available' : `
       ${(summary.largestRacePop * 100.0 / summary.totalPop).toFixed(1)}% ${summary.largestRaceLabel}<br>
       (out of ${summary.totalPop} adults)
     `;
+  });
+
+  dataLayer.on('tooltipopen', (evt) => {
+    evt.layer.setStyle({
+      stroke: true,
+      weight: 2,
+      color: 'gray',
+      opacity: 1,
+    });
+  });
+
+  dataLayer.on('tooltipclose', (evt) => {
+    dataLayer.resetStyle();
   });
 
   return dataLayer;
