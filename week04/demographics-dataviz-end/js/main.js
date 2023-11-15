@@ -145,6 +145,8 @@ function getDemographicSummary(dmgRow) {
   };
 }
 
+let THRESHOLD = 0.5;
+
 /**
  * Construct a path options object for use in styling GeoJSON features.
  *
@@ -167,7 +169,7 @@ function calcFeatureStyle(feature, dmgData) {
   }
 
   const largestRacePortion = 1.0 * summary.largestRacePop / summary.totalPop;
-  const minSegregatedPortion = 0.5;
+  const minSegregatedPortion = THRESHOLD;
 
   const color = colors[summary.largestRaceIndex];
   const opacity = Math.max(0, (largestRacePortion - minSegregatedPortion) / (1 - minSegregatedPortion));
@@ -214,6 +216,21 @@ function initDataLayer(geoData, dmgData) {
   return dataLayer;
 }
 
+/**
+ * This zip function (generator) operates like the Python zip function.
+ * https://docs.python.org/3/library/functions.html#zip
+ *
+ * @param  {...Array} arrays One or more arrays to combine
+ * @yield  Array
+ */
+function* zip(...arrays) {
+  const minLength = Math.min(...arrays.map((arr) => arr.length));
+
+  for (let i = 0; i < minLength; ++i) {
+    yield arrays.map((arr) => arr[i]);
+  }
+}
+
 function initLegend() {
   const legend = L.control({position: 'bottomright'});
 
@@ -223,31 +240,37 @@ function initLegend() {
     const colors = d3.schemeCategory10;
 
     // Loop through the races and generate a label and colored square for each
-    let html = `
-    <h2>Racial Classifications</h2>
+    div.innerHTML = `
+      <h2>Racial Classifications</h2>
 
-    <ul class="legend-entries">
+      <ul class="legend-entries">
+        ${[...zip(races, colors)].map(([race, color]) => `
+          <li class="legend-entry">
+            <span class="legend-icon" style="background-color: ${color};"></span>
+            <span class="legend-label">${race.replace(/ /g, '&nbsp;')}</span>
+          </li>
+        `).join(' ')}
+      </ul>
+
+      <p class="legend-description"><em>
+        A census block group will only be visible if the percentage of the total
+        population within that block group is dominated (above a threshold) by a
+        single racial classification.
+      </em></p>
+
+      <h2>Majority Threshold: <span id="majority-threshold-display">50%</span></h2>
+      <input id="majority-threshold" type="range" min="0" max="100" value="50">
     `;
 
-    for (let i = 0; i < races.length; i++) {
-      html += `
-        <li class="legend-entry">
-          <span class="legend-icon" style="background-color: ${colors[i]};"></span>
-          <span class="legend-label">${races[i].replace(/ /g, '&nbsp;')}</span>
-        </li>
-      `;
-    }
-
-    html += `
-    </ul>
-
-    <p class="legend-description"><em>
-      A census block group will only be visible if the percentage of the total
-      population within that block group is dominated (50% or greater) by a
-      single racial classification.
-    </em></p>
-    `;
-    div.innerHTML = html;
+    const thresholdInput = div.querySelector('#majority-threshold');
+    const thresholdDisplay = div.querySelector('#majority-threshold-display');
+    thresholdInput.addEventListener('mousedown', (evt) => evt.stopPropagation());
+    thresholdInput.addEventListener('touchstart', (evt) => evt.stopPropagation());
+    thresholdInput.addEventListener('input', () => {
+      THRESHOLD = thresholdInput.value / 100.0;
+      thresholdDisplay.innerHTML = `${thresholdInput.value}%`;
+      dataLayer.resetStyle();
+    });
 
     return div;
   };
